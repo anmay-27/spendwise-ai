@@ -5,29 +5,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public final class Responses {
+    private Responses() {}
 
-    private Responses() {
-    }
-
-    public record AuthUserResponse(
-            Long id,
-            String name,
-            String email,
-            String role,
-            boolean googleConnected
-    ) {
-    }
-
-    public record CsrfResponse(String token, String headerName) {
-    }
-
-    public record CategoryView(
-            Long id,
-            String name,
-            String icon,
-            boolean systemDefined
-    ) {
-    }
+    public record CategoryView(Long id, String name, String icon, boolean systemDefined) {}
 
     public record TransactionView(
             Long id,
@@ -40,9 +20,7 @@ public final class Responses {
             String aiSuggestedCategory,
             double aiConfidence,
             String status,
-            LocalDateTime occurredAt
-    ) {
-    }
+            LocalDateTime occurredAt) {}
 
     public record BudgetProgress(
             Long budgetId,
@@ -54,17 +32,9 @@ public final class Responses {
             int warningPercent,
             double usedPercent,
             BigDecimal projectedSpend,
-            boolean warning
-    ) {
-    }
+            boolean warning) {}
 
-    public record CategorySpend(
-            String category,
-            String icon,
-            BigDecimal amount,
-            double percentage
-    ) {
-    }
+    public record CategorySpend(String category, String icon, BigDecimal amount, double percentage) {}
 
     public record DashboardResponse(
             Long userId,
@@ -75,21 +45,7 @@ public final class Responses {
             BigDecimal remainingBudget,
             List<CategorySpend> categorySpending,
             List<BudgetProgress> budgets,
-            List<TransactionView> recentTransactions
-    ) {
-    }
-
-    public record PaymentPreviewResponse(
-            String merchant,
-            BigDecimal amount,
-            String description,
-            Long suggestedCategoryId,
-            String suggestedCategory,
-            String suggestedCategoryIcon,
-            double confidence,
-            String predictionSource
-    ) {
-    }
+            List<TransactionView> recentTransactions) {}
 
     public record PaymentResponse(
             Long transactionId,
@@ -101,9 +57,7 @@ public final class Responses {
             String aiSuggestedCategory,
             double confidence,
             BigDecimal walletBalance,
-            String budgetWarning
-    ) {
-    }
+            String budgetWarning) {}
 
     public record MonthlyReportResponse(
             int year,
@@ -115,13 +69,7 @@ public final class Responses {
             BigDecimal highestCategoryAmount,
             List<CategorySpend> categorySpending,
             List<BudgetProgress> budgets,
-            List<String> insights
-    ) {
-    }
+            List<String> insights) {}
 
-    public record AssistantResponse(
-            String answer,
-            List<String> facts
-    ) {
-    }
+    public record AssistantResponse(String answer, List<String> facts) {}
 }

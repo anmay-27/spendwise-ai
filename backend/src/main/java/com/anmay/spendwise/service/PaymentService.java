@@ -1,19 +1,9 @@
 package com.anmay.spendwise.service;
 
-import com.anmay.spendwise.dto.Requests.ConfirmPaymentRequest;
-import com.anmay.spendwise.dto.Requests.PaymentPreviewRequest;
-import com.anmay.spendwise.dto.Responses.PaymentPreviewResponse;
+import com.anmay.spendwise.dto.Requests.PaymentRequest;
 import com.anmay.spendwise.dto.Responses.PaymentResponse;
-import com.anmay.spendwise.entity.AppUser;
-import com.anmay.spendwise.entity.Category;
-import com.anmay.spendwise.entity.ExpenseTransaction;
-import com.anmay.spendwise.entity.PaymentStatus;
-import com.anmay.spendwise.entity.Wallet;
-import com.anmay.spendwise.repository.AppUserRepository;
-import com.anmay.spendwise.repository.BudgetRepository;
-import com.anmay.spendwise.repository.CategoryRepository;
-import com.anmay.spendwise.repository.ExpenseTransactionRepository;
-import com.anmay.spendwise.repository.WalletRepository;
+import com.anmay.spendwise.entity.*;
+import com.anmay.spendwise.repository.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,124 +39,43 @@ public class PaymentService {
         this.analyticsService = analyticsService;
     }
 
-    @Transactional(readOnly = true)
-    public PaymentPreviewResponse preview(Long userId, PaymentPreviewRequest request) {
-        requireUser(userId);
-        List<Category> categories = categoriesFor(userId);
-        MlServiceClient.Prediction prediction = predict(
-                userId,
-                request.merchant(),
-                request.description(),
-                request.amount(),
-                categories
-        );
-        Category suggestedCategory = resolvePredictedCategory(userId, prediction.category());
-
-        return new PaymentPreviewResponse(
-                request.merchant().trim(),
-                request.amount(),
-                normalize(request.description()),
-                suggestedCategory.getId(),
-                suggestedCategory.getName(),
-                suggestedCategory.getIcon(),
-                prediction.confidence(),
-                prediction.model()
-        );
-    }
-
     @Transactional
-    public PaymentResponse confirm(Long userId, ConfirmPaymentRequest request) {
-        AppUser user = requireUser(userId);
-        Wallet wallet = walletRepository.findByUserId(userId)
+    public PaymentResponse pay(PaymentRequest request) {
+        AppUser user = userRepository.findById(request.userId())
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        Wallet wallet = walletRepository.findByUserId(request.userId())
                 .orElseThrow(() -> new IllegalArgumentException("Wallet not found"));
-
         if (wallet.getBalance().compareTo(request.amount()) < 0) {
             throw new IllegalArgumentException("Insufficient demo wallet balance");
         }
 
-        Category finalCategory = categoryRepository.findById(request.categoryId())
-                .orElseThrow(() -> new IllegalArgumentException("Selected category not found"));
-        if (!finalCategory.getUser().getId().equals(userId)) {
-            throw new IllegalArgumentException("Selected category does not belong to this user");
-        }
+        List<Category> categories = categoryRepository.findByUserIdOrderByNameAsc(request.userId());
+        List<String> names = categories.stream().map(Category::getName).toList();
+        MlServiceClient.Prediction prediction = mlServiceClient.predict(
+                request.userId(), request.merchant(), request.description(),
+                request.amount().doubleValue(), names);
 
-        List<Category> categories = categoriesFor(userId);
-        MlServiceClient.Prediction prediction = predict(
-                userId,
-                request.merchant(),
-                request.description(),
-                request.amount(),
-                categories
-        );
+        Category category = categoryRepository
+                .findByUserIdAndNameIgnoreCase(request.userId(), prediction.category())
+                .orElseGet(() -> categoryRepository
+                        .findByUserIdAndNameIgnoreCase(request.userId(), "Other")
+                        .orElseThrow(() -> new IllegalArgumentException("Other category is missing")));
 
-        ExpenseTransaction transaction = transactionRepository.save(new ExpenseTransaction(
-                user,
-                request.merchant().trim(),
-                normalize(request.description()),
-                request.amount(),
-                finalCategory,
-                prediction.category(),
-                prediction.confidence(),
-                PaymentStatus.SUCCESSFUL,
-                LocalDateTime.now()
-        ));
+        ExpenseTransaction transaction = new ExpenseTransaction(
+                user, request.merchant().trim(), normalize(request.description()), request.amount(),
+                category, prediction.category(), prediction.confidence(), PaymentStatus.SUCCESSFUL,
+                LocalDateTime.now());
+        transactionRepository.save(transaction);
 
         wallet.setBalance(wallet.getBalance().subtract(request.amount()));
         walletRepository.save(wallet);
 
-        mlServiceClient.sendFeedback(
-                userId,
-                request.merchant(),
-                normalize(request.description()),
-                finalCategory.getName()
-        );
-
+        String warning = budgetWarning(request.userId(), category);
         return new PaymentResponse(
-                transaction.getId(),
-                transaction.getAmount(),
-                transaction.getMerchantName(),
-                finalCategory.getId(),
-                finalCategory.getName(),
-                finalCategory.getIcon(),
-                transaction.getAiSuggestedCategory(),
-                transaction.getAiConfidence(),
-                wallet.getBalance(),
-                budgetWarning(userId, finalCategory)
-        );
-    }
-
-    private AppUser requireUser(Long userId) {
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-    }
-
-    private List<Category> categoriesFor(Long userId) {
-        List<Category> categories = categoryRepository.findByUserIdOrderByNameAsc(userId);
-        if (categories.isEmpty()) {
-            throw new IllegalArgumentException("No categories are configured for this user");
-        }
-        return categories;
-    }
-
-    private MlServiceClient.Prediction predict(Long userId,
-                                                String merchant,
-                                                String description,
-                                                BigDecimal amount,
-                                                List<Category> categories) {
-        return mlServiceClient.predict(
-                userId,
-                merchant,
-                normalize(description),
-                amount.doubleValue(),
-                categories.stream().map(Category::getName).toList()
-        );
-    }
-
-    private Category resolvePredictedCategory(Long userId, String predictedCategory) {
-        return categoryRepository.findByUserIdAndNameIgnoreCase(userId, predictedCategory)
-                .orElseGet(() -> categoryRepository
-                        .findByUserIdAndNameIgnoreCase(userId, "Other")
-                        .orElseThrow(() -> new IllegalArgumentException("The Other category is missing")));
+                transaction.getId(), transaction.getAmount(), transaction.getMerchantName(),
+                category.getId(), category.getName(), category.getIcon(),
+                transaction.getAiSuggestedCategory(), transaction.getAiConfidence(),
+                wallet.getBalance(), warning);
     }
 
     private String budgetWarning(Long userId, Category category) {
@@ -174,27 +83,18 @@ public class PaymentService {
                 .map(budget -> {
                     BigDecimal spent = analyticsService.total(
                             analyticsService.transactionsForMonth(userId, YearMonth.now()).stream()
-                                    .filter(transaction -> transaction.getCategory().getId()
-                                            .equals(category.getId()))
-                                    .toList()
-                    );
-                    double percent = spent
-                            .divide(budget.getMonthlyLimit(), 4, RoundingMode.HALF_UP)
-                            .multiply(BigDecimal.valueOf(100))
-                            .doubleValue();
-
-                    if (percent >= 100) {
-                        return category.getName() + " budget exceeded: " + Math.round(percent) + "% used.";
-                    }
-                    if (percent >= budget.getWarningPercent()) {
-                        return category.getName() + " has reached " + Math.round(percent) + "% of its budget.";
-                    }
+                                    .filter(tx -> tx.getCategory().getId().equals(category.getId()))
+                                    .toList());
+                    double percent = spent.divide(budget.getMonthlyLimit(), 4, RoundingMode.HALF_UP)
+                            .multiply(BigDecimal.valueOf(100)).doubleValue();
+                    if (percent >= 100) return category.getName() + " budget exceeded: " + Math.round(percent) + "% used.";
+                    if (percent >= budget.getWarningPercent()) return category.getName() + " has reached " + Math.round(percent) + "% of its budget.";
                     return null;
-                })
-                .orElse(null);
+                }).orElse(null);
     }
 
     private String normalize(String value) {
-        return value == null || value.isBlank() ? "" : value.trim();
+        if (value == null || value.isBlank()) return "";
+        return value.trim();
     }
 }

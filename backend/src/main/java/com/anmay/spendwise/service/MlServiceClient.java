@@ -26,7 +26,11 @@ public class MlServiceClient {
     public MlServiceClient(ObjectMapper objectMapper,
                            @Value("${app.ml-service-url}") String baseUrl) {
         this.objectMapper = objectMapper;
-        this.baseUrl = baseUrl.replaceAll("/$", "");
+        String normalized = baseUrl == null ? "" : baseUrl.trim();
+        if (!normalized.startsWith("http://") && !normalized.startsWith("https://")) {
+            normalized = "http://" + normalized;
+        }
+        this.baseUrl = normalized.replaceAll("/$", "");
     }
 
     public Prediction predict(Long userId,

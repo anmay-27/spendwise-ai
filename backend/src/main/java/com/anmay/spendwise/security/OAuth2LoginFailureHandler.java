@@ -25,6 +25,9 @@ public class OAuth2LoginFailureHandler extends SimpleUrlAuthenticationFailureHan
                                         HttpServletResponse response,
                                         AuthenticationException exception) throws IOException, ServletException {
         String message = URLEncoder.encode("Google sign-in failed", StandardCharsets.UTF_8);
-        getRedirectStrategy().sendRedirect(request, response, frontendUrl + "/?authError=" + message);
+        String target = "same-origin".equalsIgnoreCase(frontendUrl)
+                ? "/?authError=" + message
+                : frontendUrl.replaceAll("/$", "") + "/?authError=" + message;
+        getRedirectStrategy().sendRedirect(request, response, target);
     }
 }

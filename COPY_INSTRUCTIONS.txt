@@ -1,0 +1,6 @@
+Copy every file/folder inside this update directory into the ROOT of your existing spendwise-ai project.
+Choose Replace when Windows asks about duplicate files.
+Then follow DEPLOY_TODAY.md.
+
+This update does not contain any passwords or Google credentials.
+Do not delete your Docker volume; the local PostgreSQL data stays outside the source folder.

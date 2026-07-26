@@ -26,3 +26,8 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Secret environment files in any subproject
+**/.env
+**/.env.*
+!**/.env.example

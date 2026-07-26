@@ -27,13 +27,16 @@ services:
   backend:
     build: ./backend
     environment:
-      SPRING_PROFILES_ACTIVE: postgres
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-postgres}
       DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-spendwise}
       DB_USERNAME: ${POSTGRES_USER:-spendwise}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-spendwise}
       ML_SERVICE_URL: http://ml-service:8000
+      PORT: 8081
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     ports:
-      - "8080:8080"
+      - "8081:8081"
     depends_on:
       postgres:
         condition: service_healthy

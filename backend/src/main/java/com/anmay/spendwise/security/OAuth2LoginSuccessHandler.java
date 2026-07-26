@@ -38,6 +38,9 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
         AppUser user = accountService.upsertGoogleUser(oauth2User);
         cookieService.writeToken(response, jwtService.createToken(user));
         clearAuthenticationAttributes(request);
-        getRedirectStrategy().sendRedirect(request, response, frontendUrl + "/?oauth=success");
+        String target = "same-origin".equalsIgnoreCase(frontendUrl)
+                ? "/?oauth=success"
+                : frontendUrl.replaceAll("/$", "") + "/?oauth=success";
+        getRedirectStrategy().sendRedirect(request, response, target);
     }
 }

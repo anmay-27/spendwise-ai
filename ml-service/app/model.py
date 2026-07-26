@@ -15,10 +15,7 @@ from sklearn.pipeline import Pipeline
 SEED_EXAMPLES: list[tuple[str, str]] = [
     ("swiggy dinner food delivery restaurant", "Food"),
     ("zomato lunch restaurant order", "Food"),
-    ("pizza hut pizza dinner takeaway", "Food"),
     ("dominos pizza takeaway", "Food"),
-    ("kfc fried chicken restaurant", "Food"),
-    ("mcdonalds burger restaurant", "Food"),
     ("d mart groceries supermarket vegetables", "Food"),
     ("starbucks coffee cafe", "Food"),
     ("bigbasket grocery delivery", "Food"),
@@ -128,8 +125,6 @@ class CategoryModel:
         available_categories: list[str] | None = None,
     ) -> Prediction:
         normalized_merchant = merchant.strip().lower()
-
-        # The newest explicit choice by this user has the highest priority.
         for item in reversed(self.feedback):
             if (
                 int(item.get("user_id", -1)) == user_id
@@ -142,8 +137,9 @@ class CategoryModel:
         text = self._text(merchant, description)
         keyword_prediction = self._keyword_prediction(text)
         if keyword_prediction is not None:
-            if not available_categories or keyword_prediction in available_categories:
-                return Prediction(keyword_prediction, 0.94, "hybrid-keyword-model")
+            category = keyword_prediction
+            if not available_categories or category in available_categories:
+                return Prediction(category, 0.92, "hybrid-keyword-model")
 
         probabilities = self.pipeline.predict_proba([text])[0]
         classes = self.pipeline.classes_
@@ -154,15 +150,10 @@ class CategoryModel:
         if available_categories and category not in available_categories:
             category = "Other" if "Other" in available_categories else available_categories[0]
             confidence = min(confidence, 0.50)
-
         return Prediction(category, round(confidence, 4), "tfidf-logistic-regression")
 
     def add_feedback(
-        self,
-        user_id: int,
-        merchant: str,
-        description: str,
-        corrected_category: str,
+        self, user_id: int, merchant: str, description: str, corrected_category: str
     ) -> None:
         record = {
             "user_id": user_id,
@@ -179,40 +170,17 @@ class CategoryModel:
     @staticmethod
     def _keyword_prediction(text: str) -> str | None:
         keyword_groups = {
-            "Food": (
-                "swiggy", "zomato", "restaurant", "cafe", "grocery", "pizza",
-                "pizza hut", "dominos", "burger", "kfc", "mcdonald", "subway",
-                "starbucks", "bakery", "food", "dinner", "lunch",
-            ),
-            "Entertainment": (
-                "pvr", "netflix", "spotify", "movie", "concert", "game",
-                "bookmyshow", "cinema",
-            ),
-            "Travel": (
-                "uber", "ola", "railway", "train", "flight", "metro", "petrol",
-                "fuel", "taxi", "bus",
-            ),
-            "Shopping": (
-                "myntra", "amazon", "flipkart", "mall", "clothes", "fashion",
-                "electronics", "shoes",
-            ),
-            "Bills": (
-                "airtel", "jio", "electricity", "recharge", "internet", "rent",
-                "water bill", "gas bill", "broadband",
-            ),
-            "Healthcare": (
-                "pharmacy", "hospital", "doctor", "medicine", "diagnostic", "dentist",
-            ),
-            "Education": (
-                "udemy", "coursera", "college", "course", "tuition", "textbook",
-            ),
-            "Investment": (
-                "zerodha", "groww", "mutual fund", "sip", "stock", "fixed deposit", "nps",
-            ),
+            "Food": ("swiggy", "zomato", "restaurant", "cafe", "grocery", "pizza", "food"),
+            "Entertainment": ("pvr", "netflix", "spotify", "movie", "concert", "game", "bookmyshow"),
+            "Travel": ("uber", "ola", "railway", "train", "flight", "metro", "petrol", "fuel", "taxi"),
+            "Shopping": ("myntra", "amazon", "flipkart", "mall", "clothes", "fashion", "electronics"),
+            "Bills": ("airtel", "jio", "electricity", "recharge", "internet", "rent", "water bill", "gas bill"),
+            "Healthcare": ("pharmacy", "hospital", "doctor", "medicine", "diagnostic", "dentist"),
+            "Education": ("udemy", "coursera", "college", "course", "tuition", "textbook"),
+            "Investment": ("zerodha", "groww", "mutual fund", "sip", "stock", "fixed deposit", "nps"),
             "Gifts": ("gift", "birthday present", "bouquet"),
             "Family": ("parents", "family support", "sibling"),
         }
-
         lowered = text.lower()
         for category, keywords in keyword_groups.items():
             if any(keyword in lowered for keyword in keywords):

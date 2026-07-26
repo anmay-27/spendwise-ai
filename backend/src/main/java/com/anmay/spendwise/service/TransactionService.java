@@ -27,33 +27,22 @@ public class TransactionService {
     @Transactional(readOnly = true)
     public List<TransactionView> list(Long userId) {
         return transactionRepository.findByUserIdOrderByOccurredAtDesc(userId)
-                .stream()
-                .map(ViewMapper::transaction)
-                .toList();
+                .stream().map(ViewMapper::transaction).toList();
     }
 
     @Transactional
-    public TransactionView updateCategory(Long userId, Long transactionId, Long categoryId) {
-        ExpenseTransaction transaction = transactionRepository.findById(transactionId)
+    public TransactionView updateCategory(Long transactionId, Long categoryId) {
+        ExpenseTransaction tx = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new IllegalArgumentException("Transaction not found"));
-        if (!transaction.getUser().getId().equals(userId)) {
-            throw new IllegalArgumentException("Transaction does not belong to this user");
-        }
-
         Category category = categoryRepository.findById(categoryId)
                 .orElseThrow(() -> new IllegalArgumentException("Category not found"));
-        if (!category.getUser().getId().equals(userId)) {
+        if (!tx.getUser().getId().equals(category.getUser().getId())) {
             throw new IllegalArgumentException("Category does not belong to this user");
         }
-
-        transaction.setCategory(category);
-        ExpenseTransaction saved = transactionRepository.save(transaction);
+        tx.setCategory(category);
+        ExpenseTransaction saved = transactionRepository.save(tx);
         mlServiceClient.sendFeedback(
-                userId,
-                transaction.getMerchantName(),
-                transaction.getDescription(),
-                category.getName()
-        );
+                tx.getUser().getId(), tx.getMerchantName(), tx.getDescription(), category.getName());
         return ViewMapper.transaction(saved);
     }
 }

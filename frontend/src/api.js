@@ -1,5 +1,5 @@
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
-const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8081'
+const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || window.location.origin
 const GOOGLE_LOGIN_ENABLED = String(import.meta.env.VITE_GOOGLE_LOGIN_ENABLED || 'false') === 'true'
 
 let csrf = null

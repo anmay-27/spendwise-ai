@@ -1,0 +1,63 @@
+databases:
+  - name: spendwise-db
+    plan: free
+    region: singapore
+    databaseName: spendwise
+    user: spendwise
+    postgresMajorVersion: "17"
+
+services:
+  - type: web
+    name: spendwise-ml-service
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerContext: ./ml-service
+    dockerfilePath: ./ml-service/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: FEEDBACK_FILE
+        value: /tmp/spendwise-feedback.jsonl
+
+  - type: web
+    name: spendwise-app
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerContext: .
+    dockerfilePath: ./Dockerfile.render
+    healthCheckPath: /api/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: postgres,google
+      - key: DATABASE_URL
+        fromDatabase:
+          name: spendwise-db
+          property: connectionString
+      - key: DB_USERNAME
+        fromDatabase:
+          name: spendwise-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: spendwise-db
+          property: password
+      - key: ML_SERVICE_URL
+        fromService:
+          type: web
+          name: spendwise-ml-service
+          property: hostport
+      - key: FRONTEND_URL
+        value: same-origin
+      - key: APP_JWT_SECRET
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAME_SITE
+        value: Lax
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
