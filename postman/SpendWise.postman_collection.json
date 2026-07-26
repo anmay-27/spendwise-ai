@@ -1,0 +1,48 @@
+{
+  "info": {
+    "name": "SpendWise AI",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "backend", "value": "http://localhost:8080" },
+    { "key": "ml", "value": "http://localhost:8000" }
+  ],
+  "item": [
+    {
+      "name": "Backend Health",
+      "request": { "method": "GET", "url": "{{backend}}/api/health" }
+    },
+    {
+      "name": "Dashboard",
+      "request": { "method": "GET", "url": "{{backend}}/api/dashboard?userId=1" }
+    },
+    {
+      "name": "Make Demo Payment",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": 1,\n  \"merchant\": \"PVR Cinemas\",\n  \"amount\": 650,\n  \"description\": \"Movie tickets\"\n}"
+        },
+        "url": "{{backend}}/api/payments"
+      }
+    },
+    {
+      "name": "ML Health",
+      "request": { "method": "GET", "url": "{{ml}}/health" }
+    },
+    {
+      "name": "Predict Category",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user_id\": 1,\n  \"merchant\": \"PVR Cinemas\",\n  \"description\": \"Movie tickets\",\n  \"amount\": 650,\n  \"available_categories\": [\"Entertainment\", \"Other\"]\n}"
+        },
+        "url": "{{ml}}/predict-category"
+      }
+    }
+  ]
+}

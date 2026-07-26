@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-spendwise}
+      POSTGRES_USER: ${POSTGRES_USER:-spendwise}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-spendwise}
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-spendwise} -d ${POSTGRES_DB:-spendwise}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  ml-service:
+    build: ./ml-service
+    environment:
+      FEEDBACK_FILE: /app/data/feedback.jsonl
+    ports:
+      - "8000:8000"
+    volumes:
+      - ml_feedback:/app/data
+
+  backend:
+    build: ./backend
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-spendwise}
+      DB_USERNAME: ${POSTGRES_USER:-spendwise}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-spendwise}
+      ML_SERVICE_URL: http://ml-service:8000
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-service:
+        condition: service_started
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  ml_feedback:

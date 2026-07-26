@@ -1,0 +1,26 @@
+SPENDWISE AI — SIMPLE START (JDK 17)
+
+There are 3 separate programs inside this project:
+
+1. backend    = Spring Boot logic and database APIs
+2. ml-service = Python AI category prediction
+3. frontend   = React screens you use in the browser
+
+They work together, but do NOT start everything immediately.
+
+FIRST: TEST ONLY THE BACKEND
+
+1. Extract this ZIP.
+2. Open IntelliJ IDEA.
+3. Click Open and select the folder: spendwise-ai/backend
+4. Select JDK 17 as the Project SDK.
+5. Let IntelliJ download the Maven dependencies.
+6. Open:
+   src/main/java/com/anmay/spendwise/SpendWiseApplication.java
+7. Click the green Run button.
+8. Open this URL in your browser:
+   http://localhost:8080/api/health
+
+When that works, move to ml-service and frontend using START_HERE.md.
+
+Important: You do not need PostgreSQL for the first run. The backend initially uses H2, an in-memory test database.
