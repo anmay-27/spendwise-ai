@@ -1,47 +1,23 @@
-# Deployment plan
+# Deployment readiness
 
-The repository is container-ready. Deploy only after all three services work locally.
+The supported verified target is the local Docker Compose stack. No cloud deployment has been performed.
 
-## Production services
+Deploy the frontend, Gateway, finance core, notification service and Python AI service as separate applications. Financial and notification databases require independent connection credentials. The old Render files are archived in `docs/legacy/`; they are not an active blueprint for this architecture.
 
-1. PostgreSQL database
-2. Python ML service built from `ml-service/Dockerfile`
-3. Spring Boot service built from `backend/Dockerfile`
-4. React frontend built from `frontend/Dockerfile`
+Before a public deployment:
 
-## Required backend environment variables
+- Use HTTPS, `COOKIE_SECURE=true`, the actual frontend origin and restricted CORS.
+- Store database passwords, JWT signing material, AI-service keys and Grafana credentials in the hosting platform's secret manager.
+- Disable demo seeding and provision accounts through registration.
+- Keep Redis, Kafka, databases and management listeners private; use TLS and authentication for managed infrastructure.
+- Configure Kafka replication, ACLs, retention and dead-letter monitoring.
+- Back up PostgreSQL and the AI corrections store and verify restoration.
+- Define cleanup policies for outbox rows, processed events, sessions and notifications.
+- Set CPU/memory budgets, benchmark requests and monitor alerts.
+- Before multiple AI replicas, move its private SQLite corrections into a service-owned database.
+- Replace the notification service's core-session lookup with an explicit distributed identity/revocation contract before fully extracting Auth.
+- Configure the external Google callback URL and trusted reverse-proxy handling separately if OAuth is enabled.
 
-```text
-SPRING_PROFILES_ACTIVE=postgres
-DB_URL=jdbc:postgresql://HOST:PORT/DATABASE
-DB_USERNAME=YOUR_USERNAME
-DB_PASSWORD=YOUR_PASSWORD
-ML_SERVICE_URL=https://YOUR-ML-SERVICE
-PORT=8080
-```
+Use `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`, `KAFKA_BOOTSTRAP_SERVERS`, `ML_SERVICE_URL`, `ML_SERVICE_KEY`, `APP_JWT_SECRET`, `CORE_URL` and `NOTIFICATION_URL` for platform-specific addresses and credentials. The local financial timezone defaults to Asia/Kolkata via `APP_TIME_ZONE`; use a consistent financial timezone across core replicas.
 
-## ML service environment variables
-
-```text
-FEEDBACK_FILE=/app/data/feedback.jsonl
-PORT=8000
-```
-
-Use a persistent disk or managed storage for the feedback file. Without it, learned corrections are lost when the container is replaced.
-
-## Frontend routing
-
-The included Nginx configuration proxies `/api` to a Docker service named `backend`. For separate cloud services, either:
-
-- configure the hosting platform to proxy `/api` to the backend, or
-- build the frontend with an external `VITE_API_URL` and update `src/api.js` accordingly.
-
-## Before a public deployment
-
-- Add JWT authentication and authorization.
-- Restrict CORS to the deployed frontend domain.
-- Use HTTPS everywhere.
-- Store secrets in the platform's secret manager.
-- Replace demo seeding with migrations.
-- Add rate limiting and request logging.
-- Do not connect real payments until security and regulatory requirements are addressed.
+See [migration decisions](docs/MIGRATION.md) before attaching an existing financial database. Kubernetes and distributed tracing remain future improvements.

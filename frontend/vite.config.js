@@ -6,8 +6,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      '/oauth2': { target: process.env.GATEWAY_URL || 'http://localhost:18080', changeOrigin: true },
+      '/login': { target: process.env.GATEWAY_URL || 'http://localhost:18080', changeOrigin: true },
       '/api': {
-        target: 'http://localhost:8080',
+        target: process.env.GATEWAY_URL || 'http://localhost:18080',
         changeOrigin: true,
       },
     },

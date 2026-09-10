@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import threading
+import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -84,7 +86,12 @@ class CategoryModel:
         )
         self.feedback_path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.Lock()
-        self.feedback: list[dict] = self._load_feedback()
+        self.db_path = self.feedback_path.with_suffix(".sqlite3")
+        with closing(sqlite3.connect(self.db_path)) as db, db:
+            db.execute("CREATE TABLE IF NOT EXISTS corrections(user_id INTEGER NOT NULL,merchant TEXT NOT NULL,description TEXT NOT NULL,corrected_category TEXT NOT NULL, PRIMARY KEY(user_id,merchant))")
+            for item in self._load_feedback():
+                db.execute("INSERT OR IGNORE INTO corrections VALUES(?,?,?,?)", (item["user_id"], item["merchant"].strip().lower(), item.get("description", ""), item["corrected_category"]))
+        self.feedback: list[dict] = []
         self.pipeline: Pipeline = self._train()
 
     def _load_feedback(self) -> list[dict]:
@@ -100,11 +107,7 @@ class CategoryModel:
 
     def _training_rows(self) -> Iterable[tuple[str, str]]:
         yield from SEED_EXAMPLES
-        for item in self.feedback:
-            text = self._text(item.get("merchant", ""), item.get("description", ""))
-            category = str(item.get("corrected_category", "Other"))
-            if text.strip() and category.strip():
-                yield text, category
+        # Personal corrections never enter shared classifier training.
 
     def _train(self) -> Pipeline:
         rows = list(self._training_rows())
@@ -125,7 +128,10 @@ class CategoryModel:
         available_categories: list[str] | None = None,
     ) -> Prediction:
         normalized_merchant = merchant.strip().lower()
-        for item in reversed(self.feedback):
+        with closing(sqlite3.connect(self.db_path)) as db, db:
+            db.row_factory = sqlite3.Row
+            personal = [dict(row) for row in db.execute("SELECT * FROM corrections WHERE user_id=? AND merchant=?", (user_id, normalized_merchant))]
+        for item in personal:
             if (
                 int(item.get("user_id", -1)) == user_id
                 and str(item.get("merchant", "")).strip().lower() == normalized_merchant
@@ -161,11 +167,8 @@ class CategoryModel:
             "description": description.strip(),
             "corrected_category": corrected_category.strip(),
         }
-        with self.lock:
-            with self.feedback_path.open("a", encoding="utf-8") as file:
-                file.write(json.dumps(record, ensure_ascii=False) + "\n")
-            self.feedback.append(record)
-            self.pipeline = self._train()
+        with self.lock, closing(sqlite3.connect(self.db_path)) as db, db:
+            db.execute("INSERT INTO corrections VALUES(?,?,?,?) ON CONFLICT(user_id,merchant) DO UPDATE SET description=excluded.description,corrected_category=excluded.corrected_category", (user_id, merchant.strip().lower(), description.strip(), corrected_category.strip()))
 
     @staticmethod
     def _keyword_prediction(text: str) -> str | None:

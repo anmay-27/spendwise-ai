@@ -1,112 +1,135 @@
 package com.anmay.spendwise.service;
 
 import com.anmay.spendwise.dto.Responses.AssistantResponse;
-import com.anmay.spendwise.dto.Responses.CategorySpend;
-import com.anmay.spendwise.entity.ExpenseTransaction;
-import com.anmay.spendwise.repository.CategoryRepository;
-import org.springframework.stereotype.Service;
-
-import java.math.BigDecimal;
-import java.math.RoundingMode;
+import com.anmay.spendwise.finance.FinanceInsights;
+import java.math.*;
 import java.time.*;
 import java.util.*;
 import java.util.regex.*;
+import org.springframework.stereotype.Service;
 
 @Service
 public class AssistantService {
-    private final AnalyticsService analyticsService;
-    private final CategoryRepository categoryRepository;
+  private final FinanceInsights finance;
 
-    public AssistantService(AnalyticsService analyticsService,
-                            CategoryRepository categoryRepository) {
-        this.analyticsService = analyticsService;
-        this.categoryRepository = categoryRepository;
+  public AssistantService(FinanceInsights finance) {
+    this.finance = finance;
+  }
+
+  public AssistantResponse answer(Long uid, String question) {
+    String q = question.toLowerCase(Locale.ROOT);
+    YearMonth month = q.contains("last month") ? YearMonth.now().minusMonths(1) : YearMonth.now();
+    var rows = finance.rows(uid, month);
+    var categories = finance.group(rows, "category");
+    if (q.contains("subscription")) {
+      var subs = finance.subscriptions(uid);
+      BigDecimal amount =
+          subs.stream()
+              .map(s -> (BigDecimal) s.get("monthlyCost"))
+              .reduce(BigDecimal.ZERO, BigDecimal::add);
+      return answer(
+          "Detected subscriptions total ₹" + amount + " per month.",
+          List.of(
+              "Annual estimate: ₹" + amount.multiply(BigDecimal.valueOf(12)),
+              "Requires at least three monthly payments"));
     }
-
-    public AssistantResponse answer(Long userId, String question) {
-        String q = question.toLowerCase(Locale.ROOT).trim();
-        YearMonth currentMonth = YearMonth.now();
-        List<ExpenseTransaction> monthTransactions = analyticsService.transactionsForMonth(userId, currentMonth);
-        BigDecimal monthTotal = analyticsService.total(monthTransactions);
-        List<CategorySpend> spending = analyticsService.categorySpending(monthTransactions);
-        List<String> facts = new ArrayList<>();
-
-        if (q.contains("most") || q.contains("highest") || q.contains("top category")) {
-            if (spending.isEmpty()) return new AssistantResponse("There is no spending recorded this month.", List.of());
-            CategorySpend top = spending.get(0);
-            facts.add(top.category() + ": ₹" + money(top.amount()));
-            facts.add(top.percentage() + "% of this month's spending");
-            return new AssistantResponse("You spent the most on " + top.category() + " this month.", facts);
-        }
-
-        Optional<String> mentionedCategory = categoryRepository.findByUserIdOrderByNameAsc(userId).stream()
-                .map(CategoryName::new)
-                .filter(item -> q.contains(item.lower()))
-                .map(CategoryName::name)
-                .findFirst();
-        if (mentionedCategory.isPresent()) {
-            String name = mentionedCategory.get();
-            LocalDateTime start = q.contains("last week") ? LocalDate.now().minusDays(6).atStartOfDay()
-                    : currentMonth.atDay(1).atStartOfDay();
-            BigDecimal amount = monthTransactions.stream()
-                    .filter(tx -> !tx.getOccurredAt().isBefore(start))
-                    .filter(tx -> tx.getCategory().getName().equalsIgnoreCase(name))
-                    .map(ExpenseTransaction::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-            facts.add("Period: " + (q.contains("last week") ? "last 7 days" : "current month"));
-            facts.add("Transactions: " + monthTransactions.stream()
-                    .filter(tx -> !tx.getOccurredAt().isBefore(start))
-                    .filter(tx -> tx.getCategory().getName().equalsIgnoreCase(name)).count());
-            return new AssistantResponse("You spent ₹" + money(amount) + " on " + name + ".", facts);
-        }
-
-        if (q.contains("compare") || q.contains("last month")) {
-            BigDecimal previous = analyticsService.total(
-                    analyticsService.transactionsForMonth(userId, currentMonth.minusMonths(1)));
-            BigDecimal difference = monthTotal.subtract(previous);
-            String direction = difference.signum() >= 0 ? "more" : "less";
-            facts.add("This month: ₹" + money(monthTotal));
-            facts.add("Previous month: ₹" + money(previous));
-            return new AssistantResponse("You spent ₹" + money(difference.abs()) + " " + direction + " than the previous month.", facts);
-        }
-
-        if (q.contains("can i spend") || q.contains("afford")) {
-            BigDecimal requested = extractAmount(q).orElse(BigDecimal.ZERO);
-            var dashboard = analyticsService.dashboard(userId);
-            BigDecimal remaining = dashboard.remainingBudget();
-            boolean canSpend = requested.signum() > 0 && requested.compareTo(remaining) <= 0;
-            facts.add("Remaining configured budget: ₹" + money(remaining));
-            facts.add("Requested amount: ₹" + money(requested));
-            return new AssistantResponse(
-                    requested.signum() == 0
-                            ? "Mention an amount, for example: Can I spend ₹3,000 this month?"
-                            : canSpend
-                                ? "Yes, it fits within your remaining configured monthly budget."
-                                : "It would exceed your remaining configured monthly budget.",
-                    facts);
-        }
-
-        facts.add("Spent this month: ₹" + money(monthTotal));
-        if (!spending.isEmpty()) facts.add("Highest category: " + spending.get(0).category());
-        facts.add("Try asking: Where did I spend the most this month?");
-        return new AssistantResponse(
-                "Your current monthly spending is ₹" + money(monthTotal) + ". Ask about a category, last month, or whether a purchase fits your budget.",
-                facts);
+    if (q.contains("save") && (q.contains("month") || q.contains("lakh"))) {
+      Matcher amountMatcher =
+          Pattern.compile("(?:₹|rs\\.?|inr)?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(lakh|k)?")
+              .matcher(q);
+      if (!amountMatcher.find())
+        return answer("Specify a target amount and number of months.", List.of());
+      BigDecimal target = new BigDecimal(amountMatcher.group(1).replace(",", ""));
+      if ("lakh".equals(amountMatcher.group(2)))
+        target = target.multiply(BigDecimal.valueOf(100000));
+      if ("k".equals(amountMatcher.group(2))) target = target.multiply(BigDecimal.valueOf(1000));
+      Matcher monthsMatcher = Pattern.compile("(\\d+)\\s*months?").matcher(q);
+      int months =
+          monthsMatcher.find()
+              ? Integer.parseInt(monthsMatcher.group(1))
+              : q.contains("six") ? 6 : 0;
+      if (months < 1 || months > 600)
+        return answer("Specify a horizon from 1 to 600 months.", List.of());
+      var previous = finance.rows(uid, YearMonth.now().minusMonths(1));
+      BigDecimal
+          saving = finance.sum(previous, "INCOME").subtract(finance.sum(previous, "EXPENSE")),
+          required = target.divide(BigDecimal.valueOf(months), 2, RoundingMode.UP);
+      return answer(
+          "You need ₹" + required + " per month to save ₹" + target + " in " + months + " months.",
+          List.of(
+              "Previous month's net savings: ₹" + saving,
+              saving.compareTo(required) >= 0
+                  ? "That fits your previous month's pace; it is an estimate."
+                  : "That exceeds your previous month's pace."));
     }
-
-    private Optional<BigDecimal> extractAmount(String question) {
-        Matcher matcher = Pattern.compile("(?:₹|rs\\.?|inr)?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)", Pattern.CASE_INSENSITIVE)
-                .matcher(question);
-        if (!matcher.find()) return Optional.empty();
-        return Optional.of(new BigDecimal(matcher.group(1).replace(",", "")));
+    if (q.contains("increased") || q.contains("increase")) {
+      var now = finance.group(finance.rows(uid, YearMonth.now()), "category");
+      var old = finance.group(finance.rows(uid, YearMonth.now().minusMonths(1)), "category");
+      var highest =
+          now.entrySet().stream()
+              .max(
+                  Comparator.comparing(
+                      e -> e.getValue().subtract(old.getOrDefault(e.getKey(), BigDecimal.ZERO))));
+      if (highest.isEmpty()) return answer("No spending recorded.", List.of());
+      var top = highest.get();
+      BigDecimal difference =
+          top.getValue().subtract(old.getOrDefault(top.getKey(), BigDecimal.ZERO));
+      return answer(
+          difference.signum() > 0
+              ? top.getKey() + " increased the most by amount: ₹" + difference + "."
+              : "No category spending increased.",
+          List.of("Comparison: current and previous calendar month"));
     }
-
-    private String money(BigDecimal amount) {
-        return amount.setScale(0, RoundingMode.HALF_UP).toPlainString();
+    if (q.contains("compare")) {
+      var now = finance.sum(finance.rows(uid, YearMonth.now()), "EXPENSE");
+      var old = finance.sum(finance.rows(uid, YearMonth.now().minusMonths(1)), "EXPENSE");
+      return answer(
+          "This month: ₹" + now + "; last month: ₹" + old + ".",
+          List.of("Difference: ₹" + now.subtract(old)));
     }
-
-    private record CategoryName(String name, String lower) {
-        CategoryName(com.anmay.spendwise.entity.Category category) {
-            this(category.getName(), category.getName().toLowerCase(Locale.ROOT));
+    for (String category : categories.keySet())
+      if (q.contains(category.toLowerCase(Locale.ROOT))) {
+        BigDecimal amount = categories.get(category);
+        if (q.contains("last week")) {
+          var combined =
+              new ArrayList<Map<String, Object>>(finance.rows(uid, YearMonth.now().minusMonths(1)));
+          combined.addAll(finance.rows(uid, YearMonth.now()));
+          LocalDateTime start = LocalDate.now().minusDays(6).atStartOfDay();
+          amount =
+              combined.stream()
+                  .filter(
+                      r ->
+                          r.get("type").equals("EXPENSE")
+                              && r.get("category").equals(category)
+                              && !((java.sql.Timestamp) r.get("occurred_at"))
+                                  .toLocalDateTime()
+                                  .isBefore(start))
+                  .map(r -> (BigDecimal) r.get("amount"))
+                  .reduce(BigDecimal.ZERO, BigDecimal::add);
         }
-    }
+        return answer(
+            "You spent ₹" + amount + " on " + category + ".",
+            List.of("Period: " + (q.contains("last week") ? "last seven days" : month)));
+      }
+    if (q.contains("reduce"))
+      return answer(
+          "Start with your largest discretionary categories and recurring charges.",
+          (List<String>) finance.analytics(uid, month).get("insights"));
+    var highest = categories.entrySet().stream().max(Map.Entry.comparingByValue());
+    if (q.contains("most") || q.contains("highest"))
+      return answer(
+          highest
+              .map(e -> "Your largest category was " + e.getKey() + " at ₹" + e.getValue() + ".")
+              .orElse("No spending recorded."),
+          List.of("Period: " + month));
+    return answer(
+        "Total expenses for " + month + ": ₹" + finance.sum(rows, "EXPENSE") + ".",
+        List.of(
+            "Ask about a category, subscriptions, month comparison, savings targets, or reducing"
+                + " expenses."));
+  }
+
+  private AssistantResponse answer(String text, List<String> facts) {
+    return new AssistantResponse(text, facts);
+  }
 }

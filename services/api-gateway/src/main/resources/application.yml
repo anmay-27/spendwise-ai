@@ -1,0 +1,37 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: notifications
+              uri: ${NOTIFICATION_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/notifications/**
+            - id: finance
+              uri: ${CORE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/**,/oauth2/**,/login/**,/swagger-ui/**,/swagger-ui.html,/v3/api-docs/**
+          httpclient:
+            connect-timeout: 3000
+            response-timeout: 15s
+management:
+  server:
+    port: 9090
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+logging:
+  structured:
+    format:
+      console: ecs
+

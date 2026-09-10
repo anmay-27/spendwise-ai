@@ -2,18 +2,31 @@ package com.anmay.spendwise.controller;
 
 import com.anmay.spendwise.dto.Requests.PaymentRequest;
 import com.anmay.spendwise.dto.Responses.PaymentResponse;
-import com.anmay.spendwise.service.PaymentService;
+import com.anmay.spendwise.service.IdempotentPaymentService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/payments")
 public class PaymentController {
-    private final PaymentService paymentService;
-    public PaymentController(PaymentService paymentService) { this.paymentService = paymentService; }
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.anmay.spendwise.security.CurrentUserService currentUser;
 
-    @PostMapping
-    public PaymentResponse pay(@Valid @RequestBody PaymentRequest request) {
-        return paymentService.pay(request);
-    }
+  private final IdempotentPaymentService paymentService;
+
+  public PaymentController(IdempotentPaymentService paymentService) {
+    this.paymentService = paymentService;
+  }
+
+  @PostMapping
+  public PaymentResponse pay(
+      @Valid @RequestBody PaymentRequest request, @RequestHeader("Idempotency-Key") String key) {
+    return paymentService.pay(
+        new PaymentRequest(
+            currentUser.currentUserId(),
+            request.merchant(),
+            request.amount(),
+            request.description()),
+        key);
+  }
 }

@@ -4,23 +4,29 @@ import com.anmay.spendwise.dto.Requests.UpdateCategoryRequest;
 import com.anmay.spendwise.dto.Responses.TransactionView;
 import com.anmay.spendwise.service.TransactionService;
 import jakarta.validation.Valid;
-import org.springframework.web.bind.annotation.*;
 import java.util.List;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/transactions")
 public class TransactionController {
-    private final TransactionService transactionService;
-    public TransactionController(TransactionService transactionService) { this.transactionService = transactionService; }
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.anmay.spendwise.security.CurrentUserService currentUser;
 
-    @GetMapping
-    public List<TransactionView> list(@RequestParam(defaultValue = "1") Long userId) {
-        return transactionService.list(userId);
-    }
+  private final TransactionService transactionService;
 
-    @PatchMapping("/{transactionId}/category")
-    public TransactionView updateCategory(@PathVariable Long transactionId,
-                                          @Valid @RequestBody UpdateCategoryRequest request) {
-        return transactionService.updateCategory(transactionId, request.categoryId());
-    }
+  public TransactionController(TransactionService transactionService) {
+    this.transactionService = transactionService;
+  }
+
+  @GetMapping
+  public List<TransactionView> list(@RequestParam(required = false) Long ignoredUserId) {
+    return transactionService.list(currentUser.currentUserId());
+  }
+
+  @PatchMapping("/{transactionId}/category")
+  public TransactionView updateCategory(
+      @PathVariable Long transactionId, @Valid @RequestBody UpdateCategoryRequest request) {
+    return transactionService.updateCategory(transactionId, request.categoryId());
+  }
 }

@@ -1,17 +1,30 @@
 package com.anmay.spendwise.controller;
 
-import com.anmay.spendwise.dto.Responses.DashboardResponse;
 import com.anmay.spendwise.service.AnalyticsService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/dashboard")
 public class DashboardController {
-    private final AnalyticsService analyticsService;
-    public DashboardController(AnalyticsService analyticsService) { this.analyticsService = analyticsService; }
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.anmay.spendwise.security.CurrentUserService currentUser;
 
-    @GetMapping
-    public DashboardResponse dashboard(@RequestParam(defaultValue = "1") Long userId) {
-        return analyticsService.dashboard(userId);
-    }
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.anmay.spendwise.service.JsonCache cache;
+
+  private final AnalyticsService analyticsService;
+
+  public DashboardController(AnalyticsService analyticsService) {
+    this.analyticsService = analyticsService;
+  }
+
+  @GetMapping
+  public Object dashboard(@RequestParam(required = false) Long ignoredUserId) {
+    Long uid = currentUser.currentUserId();
+    return cache.get(
+        "dashboard",
+        uid,
+        java.time.YearMonth.now().toString(),
+        () -> analyticsService.dashboard(uid));
+  }
 }

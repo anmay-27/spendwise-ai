@@ -17,51 +17,74 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
-    private final AuthService authService;
-    private final AuthCookieService cookieService;
-    private final CurrentUserService currentUserService;
+  @org.springframework.beans.factory.annotation.Autowired
+  private com.anmay.spendwise.security.SessionService sessions;
 
-    public AuthController(AuthService authService,
-                          AuthCookieService cookieService,
-                          CurrentUserService currentUserService) {
-        this.authService = authService;
-        this.cookieService = cookieService;
-        this.currentUserService = currentUserService;
-    }
+  private final AuthService authService;
+  private final AuthCookieService cookieService;
+  private final CurrentUserService currentUserService;
 
-    @GetMapping("/csrf")
-    public CsrfResponse csrf(CsrfToken token) {
-        return new CsrfResponse(token.getToken(), token.getHeaderName());
-    }
+  public AuthController(
+      AuthService authService,
+      AuthCookieService cookieService,
+      CurrentUserService currentUserService) {
+    this.authService = authService;
+    this.cookieService = cookieService;
+    this.currentUserService = currentUserService;
+  }
 
-    @PostMapping("/register")
-    @ResponseStatus(HttpStatus.CREATED)
-    public AuthUserResponse register(@Valid @RequestBody RegisterRequest request,
-                                     HttpServletResponse response) {
-        AuthService.AuthResult result = authService.register(request);
-        cookieService.writeToken(response, result.token());
-        return result.user();
-    }
+  @GetMapping("/csrf")
+  public CsrfResponse csrf(CsrfToken token) {
+    return new CsrfResponse(token.getToken(), token.getHeaderName());
+  }
 
-    @PostMapping("/login")
-    public AuthUserResponse login(@Valid @RequestBody LoginRequest request,
-                                  HttpServletResponse response) {
-        AuthService.AuthResult result = authService.login(request);
-        cookieService.writeToken(response, result.token());
-        return result.user();
-    }
+  @PostMapping("/register")
+  @ResponseStatus(HttpStatus.CREATED)
+  public AuthUserResponse register(
+      @Valid @RequestBody RegisterRequest request, HttpServletResponse response) {
+    AuthService.AuthResult result = authService.register(request);
+    cookieService.writeToken(response, result.token());
+    cookieService.writeRefresh(response, result.refresh());
+    return result.user();
+  }
 
-    @PostMapping("/logout")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void logout(HttpServletRequest request, HttpServletResponse response) {
-        cookieService.clearToken(response);
-        if (request.getSession(false) != null) {
-            request.getSession(false).invalidate();
-        }
-    }
+  @PostMapping("/login")
+  public AuthUserResponse login(
+      @Valid @RequestBody LoginRequest request, HttpServletResponse response) {
+    AuthService.AuthResult result = authService.login(request);
+    cookieService.writeToken(response, result.token());
+    cookieService.writeRefresh(response, result.refresh());
+    return result.user();
+  }
 
-    @GetMapping("/me")
-    public AuthUserResponse me() {
-        return authService.view(currentUserService.currentUser());
+  @PostMapping("/logout")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void logout(HttpServletRequest request, HttpServletResponse response) {
+    var auth =
+        org.springframework.security.core.context.SecurityContextHolder.getContext()
+            .getAuthentication();
+    String sid =
+        auth != null
+                && auth.getPrincipal() instanceof org.springframework.security.oauth2.jwt.Jwt jwt
+            ? jwt.getClaimAsString("sid")
+            : null;
+    String refresh =
+        request.getCookies() == null
+            ? null
+            : java.util.Arrays.stream(request.getCookies())
+                .filter(c -> c.getName().equals("spendwise_refresh"))
+                .map(jakarta.servlet.http.Cookie::getValue)
+                .findFirst()
+                .orElse(null);
+    sessions.revoke(sid, refresh);
+    cookieService.clearToken(response);
+    if (request.getSession(false) != null) {
+      request.getSession(false).invalidate();
     }
+  }
+
+  @GetMapping("/me")
+  public AuthUserResponse me() {
+    return authService.view(currentUserService.currentUser());
+  }
 }

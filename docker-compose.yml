@@ -1,55 +1,158 @@
+name: spendwise
 services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-spendwise}
-      POSTGRES_USER: ${POSTGRES_USER:-spendwise}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-spendwise}
-    ports:
-      - "55432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      POSTGRES_DB: spendwise
+      POSTGRES_USER: spendwise
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/setup-local.ps1}
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: [postgres_data:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-spendwise} -d ${POSTGRES_DB:-spendwise}"]
+      test: ["CMD-SHELL", "pg_isready -U spendwise -d spendwise"]
       interval: 5s
-      timeout: 5s
-      retries: 12
-
+      retries: 20
+  notification-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: notifications
+      POSTGRES_USER: notifications
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?Run scripts/setup-local.ps1}
+    volumes: [notification_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notifications -d notifications"]
+      interval: 5s
+      retries: 20
+  redis:
+    image: redis:7.4-alpine
+    ports: ["127.0.0.1:6379:6379"]
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+  kafka:
+    image: apache/kafka:4.0.2
+    ports: ["127.0.0.1:9092:9092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:29092,EXTERNAL://:9092,CONTROLLER://:29093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes: [kafka_data:/var/lib/kafka/data]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
   ml-service:
     build: ./ml-service
     environment:
+      ML_SERVICE_KEY: ${ML_SERVICE_KEY:?Run scripts/setup-local.ps1}
       FEEDBACK_FILE: /app/data/feedback.jsonl
-    ports:
-      - "8000:8000"
-    volumes:
-      - ml_feedback:/app/data
-
+    volumes: [ml_feedback:/app/data]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      retries: 20
   backend:
+    mem_limit: 768m
     build: ./backend
     environment:
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-postgres}
-      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-spendwise}
-      DB_USERNAME: ${POSTGRES_USER:-spendwise}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-spendwise}
+      DB_URL: jdbc:postgresql://postgres:5432/spendwise
+      DB_USERNAME: spendwise
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      APP_JWT_SECRET: ${APP_JWT_SECRET:?Run scripts/setup-local.ps1}
+      ML_SERVICE_KEY: ${ML_SERVICE_KEY}
       ML_SERVICE_URL: http://ml-service:8000
-      PORT: 8081
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-    ports:
-      - "8081:8081"
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      FRONTEND_URL: http://localhost:3000
+      DEMO_ENABLED: ${DEMO_ENABLED:-false}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      DEMO_INITIAL_WALLET_BALANCE: ${DEMO_INITIAL_WALLET_BALANCE:-0}
+      TZ: ${APP_TIME_ZONE:-Asia/Kolkata}
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=65
     depends_on:
-      postgres:
-        condition: service_healthy
-      ml-service:
-        condition: service_started
-
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      ml-service: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9091/actuator/health/readiness"]
+      interval: 15s
+      start_period: 60s
+      retries: 20
+  notification-service:
+    mem_limit: 512m
+    build: ./services/notification-service
+    environment:
+      DB_URL: jdbc:postgresql://notification-db:5432/notifications
+      DB_USERNAME: notifications
+      DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      CORE_URL: http://backend:8081
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=65
+    depends_on:
+      notification-db: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9092/actuator/health/readiness"]
+      interval: 15s
+      start_period: 60s
+      retries: 20
+  gateway:
+    mem_limit: 384m
+    build: ./services/api-gateway
+    ports: ["127.0.0.1:${GATEWAY_PORT:-18080}:8080"]
+    environment:
+      CORE_URL: http://backend:8081
+      NOTIFICATION_URL: http://notification-service:8082
+    depends_on:
+      backend: {condition: service_healthy}
+      notification-service: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9090/actuator/health/readiness"]
+      interval: 15s
+      start_period: 60s
+      retries: 20
   frontend:
     build: ./frontend
-    ports:
-      - "3000:80"
+    ports: ["127.0.0.1:3000:80"]
     depends_on:
-      - backend
-
+      gateway: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 15s
+      retries: 10
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports: ["127.0.0.1:9095:9090"]
+    volumes: ["./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+  grafana:
+    image: grafana/grafana:12.1.1
+    ports: ["127.0.0.1:3001:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Run scripts/setup-local.ps1}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards:ro
 volumes:
   postgres_data:
+  notification_data:
+  kafka_data:
   ml_feedback:
+  grafana_data:

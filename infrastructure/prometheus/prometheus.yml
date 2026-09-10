@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: spendwise-core
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["backend:9091"]
+  - job_name: gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["gateway:9090"]
+  - job_name: notifications
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["notification-service:9092"]
+

@@ -6,6 +6,10 @@
 .vscode/
 
 # Java
+.tools/
+**/target/
+**/hs_err_pid*.log
+**/replay_pid*.log
 backend/target/
 backend/data/
 
@@ -14,6 +18,11 @@ ml-service/.venv/
 ml-service/__pycache__/
 ml-service/**/*.pyc
 ml-service/data/*.jsonl
+ml-service/data/*.sqlite3*
+**/.pytest_cache/
+**/__pycache__/
+frontend/test-results/
+frontend/playwright-report/
 
 # Node
 frontend/node_modules/

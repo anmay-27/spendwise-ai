@@ -1,98 +1,17 @@
-# Start here
+# Start SpendWise AI
 
-## First opening
+Open a terminal in the directory containing `docker-compose.yml`.
 
-After extracting the project, you will see:
+1. Start Docker Desktop and verify `docker info`.
+2. On a fresh checkout only, run `powershell -ExecutionPolicy Bypass -File scripts/setup-local.ps1 -Demo`. The script creates random credentials in ignored `.env` and will not overwrite an existing file.
+3. Run `docker compose up --build -d`.
+4. Check `docker compose ps`; startup waits for service health.
+5. Open http://localhost:3000. Demo email is `demo@spendwise.local`; read `DEMO_PASSWORD` locally from `.env`.
 
-```text
-spendwise-ai/
-├── backend/       Open in IntelliJ IDEA
-├── frontend/      Open in VS Code
-├── ml-service/    Open in VS Code
-├── docker-compose.yml
-└── README.md
-```
+Gateway/Swagger uses http://localhost:18080/swagger-ui/index.html. Set `GATEWAY_PORT` in `.env` if that host port is occupied. The browser frontend uses internal Gateway routing and needs no rebuild for a Gateway host-port change.
 
-Do not move these three folders outside the main `spendwise-ai` folder.
+Grafana is http://localhost:3001 (`admin`, password from `GRAFANA_PASSWORD`). Prometheus is http://localhost:9095.
 
-## Run without Docker first
+For host Java development, select Java 21 and run `.\mvnw.cmd verify`. A portable JDK was downloaded into ignored `.tools/jdk21` in this workspace; it does not change system Java. Fresh checkouts should install JDK 21 normally.
 
-Use this method for the first run so you can see how the services connect.
-
-### Terminal 1 — ML service
-
-Open `ml-service` in VS Code.
-
-Git Bash:
-
-```bash
-python -m venv .venv
-source .venv/Scripts/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-Expected test URL:
-
-```text
-http://localhost:8000/health
-```
-
-### IntelliJ — Spring Boot backend
-
-1. Open the `backend` folder in IntelliJ.
-2. Select Java 17 as the Project SDK.
-3. Wait for Maven dependencies to finish loading.
-4. Run `src/main/java/com/anmay/spendwise/SpendWiseApplication.java`.
-
-Expected test URL:
-
-```text
-http://localhost:8080/api/health
-```
-
-The first local run uses H2 automatically, so you do not have to create PostgreSQL yet.
-
-### Terminal 2 — React frontend
-
-Open `frontend` in another VS Code window.
-
-```bash
-npm install
-npm run dev
-```
-
-Open:
-
-```text
-http://localhost:5173
-```
-
-## First test inside the app
-
-1. Open **Pay**.
-2. Enter merchant `PVR Cinemas`.
-3. Enter amount `650`.
-4. Enter description `Movie tickets`.
-5. Make the demo payment.
-6. Confirm that the AI category is **Entertainment**.
-7. Open **Transactions** and change a merchant category.
-8. Pay the same merchant again to test personalized merchant memory.
-
-## Later: run everything with Docker
-
-After the manual setup works:
-
-```bash
-docker compose up --build
-```
-
-Then open:
-
-```text
-http://localhost:3000
-```
-
-## Important
-
-This version simulates payments. It does not transfer real money and should not be connected to real UPI credentials.
+Full setup, architecture, tests and limitations: [README](README.md). Study guide: [Interview guide](docs/INTERVIEW_GUIDE.md).

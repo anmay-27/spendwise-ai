@@ -10,37 +10,38 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class CurrentUserService {
-    private final AppUserRepository userRepository;
+  private final AppUserRepository userRepository;
 
-    public CurrentUserService(AppUserRepository userRepository) {
-        this.userRepository = userRepository;
+  public CurrentUserService(AppUserRepository userRepository) {
+    this.userRepository = userRepository;
+  }
+
+  public AppUser currentUser() {
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    if (authentication == null || !authentication.isAuthenticated()) {
+      throw new IllegalArgumentException("You must be logged in");
     }
 
-    public AppUser currentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new IllegalArgumentException("You must be logged in");
-        }
-
-        String email;
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof Jwt jwt) {
-            email = jwt.getSubject();
-        } else if (principal instanceof OAuth2User oauth2User) {
-            email = oauth2User.getAttribute("email");
-        } else {
-            email = authentication.getName();
-        }
-
-        if (email == null || email.isBlank()) {
-            throw new IllegalArgumentException("Authenticated account has no email address");
-        }
-
-        return userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new IllegalArgumentException("Authenticated user was not found"));
+    String email;
+    Object principal = authentication.getPrincipal();
+    if (principal instanceof Jwt jwt) {
+      email = jwt.getSubject();
+    } else if (principal instanceof OAuth2User oauth2User) {
+      email = oauth2User.getAttribute("email");
+    } else {
+      email = authentication.getName();
     }
 
-    public Long currentUserId() {
-        return currentUser().getId();
+    if (email == null || email.isBlank()) {
+      throw new IllegalArgumentException("Authenticated account has no email address");
     }
+
+    return userRepository
+        .findByEmailIgnoreCase(email)
+        .orElseThrow(() -> new IllegalArgumentException("Authenticated user was not found"));
+  }
+
+  public Long currentUserId() {
+    return currentUser().getId();
+  }
 }
