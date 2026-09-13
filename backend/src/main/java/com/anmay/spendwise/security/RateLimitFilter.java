@@ -27,6 +27,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     if (!req.getMethod().equals("POST")
         || !(path.startsWith("/api/auth/")
             || path.equals("/api/assistant/ask")
+            || path.startsWith("/api/checkout/orders")
             || path.equals("/api/reports/generate"))) {
       chain.doFilter(req, res);
       return;

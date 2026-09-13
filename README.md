@@ -4,6 +4,8 @@ SpendWise AI is a personal finance application with income/expense tracking, mon
 
 Payments are simulated. The project does not connect to bank accounts or transfer money.
 
+The Pay screen now includes **Razorpay Test Mode checkout**, demo merchant shortcuts, a budget preview, verified receipts and payment history. Confirmed captures automatically create expenses and Kafka notifications. Configure your own test keys using the [Razorpay setup guide](docs/RAZORPAY_TEST_MODE.md). The local wallet simulation remains available in a separate tab; live payment keys are rejected.
+
 ## Implemented features
 
 - Login/register, BCrypt, 15-minute JWT access cookies, rotating refresh tokens and revocation.

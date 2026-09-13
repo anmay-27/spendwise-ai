@@ -22,6 +22,7 @@ public final class ViewMapper {
         tx.getType().name(),
         tx.getDescription(),
         tx.isRecurring(),
-        tx.isWalletPayment());
+        tx.isWalletPayment(),
+        tx.isProviderPayment());
   }
 }

@@ -277,7 +277,7 @@ export function LedgerPage() {
                 </option>
               ))}
             </select>
-            {!tx.walletPayment && (
+            {!tx.walletPayment && !tx.providerPayment && (
               <>
                 <button
                   onClick={() => {

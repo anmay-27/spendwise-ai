@@ -53,6 +53,11 @@ public class ExpenseTransaction {
 
   @Version private long version;
 
+  @Column(nullable = false)
+  private boolean providerPayment = false;
+
+  public boolean isProviderPayment() { return providerPayment; }
+
   public TransactionType getType() {
     return type;
   }

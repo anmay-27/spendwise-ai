@@ -1,5 +1,14 @@
 # Local verification
 
+## Razorpay Test Mode update — 13 September 2026
+
+- Java 21 reactor verification: **15 tests passed, none failed or skipped** (12 PostgreSQL integration tests, 2 Razorpay signature/configuration tests, 1 notification test).
+- React production build and Docker application builds passed. All containers with configured health checks were healthy.
+- Playwright: **5 passed** in 33 seconds, including missing-key setup, provider callback/receipt and dismissal UI contracts, the live local finance/Kafka flow, and seeded desktop/mobile screens.
+- Provider calls are mocked in payment integration tests, and Razorpay Checkout is stubbed in browser contract tests. **No actual Razorpay sandbox payment has been performed:** this workspace has no Razorpay credentials configured.
+- Screenshots from the running seeded app: [payment screen](screenshots/payment-screen.png), [mobile payment screen](screenshots/payment-mobile.png).
+- Configure keys and a webhook using [the Test Mode guide](RAZORPAY_TEST_MODE.md) before testing against Razorpay itself.
+
 Verified on Windows with Docker Desktop Linux containers on 10 September 2026.
 
 ## Builds and tests

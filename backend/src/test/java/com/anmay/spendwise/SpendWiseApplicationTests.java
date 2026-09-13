@@ -55,6 +55,160 @@ class SpendWiseApplicationTests {
   @Autowired FinanceInsights finance;
   @Autowired AssistantService assistant;
   @org.springframework.test.context.bean.override.mockito.MockitoBean MlServiceClient ml;
+
+  @org.springframework.test.context.bean.override.mockito.MockitoBean
+  com.anmay.spendwise.payments.RazorpayClient razorpay;
+
+  String checkout(String key) throws Exception {
+    org.mockito.Mockito.when(
+            razorpay.createOrder(
+                org.mockito.ArgumentMatchers.eq(15000L), org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(
+            json.readTree(
+                "{\"id\":\"order_"
+                    + UUID.randomUUID().toString().replace("-", "")
+                    + "\",\"amount\":15000,\"currency\":\"INR\"}"));
+    org.mockito.Mockito.when(razorpay.keyId()).thenReturn("rzp_test_example");
+    var result =
+        mvc.perform(
+                post("/api/checkout/orders")
+                    .with(user(email))
+                    .with(secureCsrf())
+                    .header("Idempotency-Key", key)
+                    .contentType("application/json")
+                    .content(
+                        json.writeValueAsString(
+                            Map.of(
+                                "merchant",
+                                "Campus Cafe",
+                                "amount",
+                                150,
+                                "categoryId",
+                                category,
+                                "notes",
+                                "Lunch"))))
+            .andExpect(status().isOk())
+            .andReturn();
+    return json.readTree(result.getResponse().getContentAsString()).get("id").asText();
+  }
+
+  JsonNode providerPayment(String id, String status) throws Exception {
+    String order =
+        db.queryForObject(
+            "select provider_order_id from checkout_orders where id=?", String.class, id);
+    return json.readTree(
+        "{\"id\":\"pay_"
+            + id.replace("-", "")
+            + "\",\"order_id\":\""
+            + order
+            + "\",\"amount\":15000,\"currency\":\"INR\",\"status\":\""
+            + status
+            + "\"}");
+  }
+
+  @Test
+  void razorpayCaptureIsRecordedOnceAndProtectedFromEdits() throws Exception {
+    String key = UUID.randomUUID().toString();
+    String id = checkout(key);
+    assertEquals(id, checkout(key));
+    org.mockito.Mockito.verify(razorpay, org.mockito.Mockito.times(1))
+        .createOrder(
+            org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyString());
+    var payment = providerPayment(id, "captured");
+    String paymentId = payment.path("id").asText();
+    org.mockito.Mockito.when(razorpay.payment(paymentId)).thenReturn(payment);
+    String signature = "a".repeat(64);
+    for (int i = 0; i < 2; i++)
+      mvc.perform(
+              post("/api/checkout/orders/" + id + "/verify")
+                  .with(user(email))
+                  .with(secureCsrf())
+                  .contentType("application/json")
+                  .content(
+                      json.writeValueAsString(
+                          Map.of("paymentId", paymentId, "signature", signature))))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.status").value("CAPTURED"));
+    String webhook =
+        json.writeValueAsString(
+            Map.of(
+                "event",
+                "payment.captured",
+                "payload",
+                Map.of("payment", Map.of("entity", payment))));
+    mvc.perform(
+            post("/api/checkout/webhook")
+                .header("X-Razorpay-Signature", signature)
+                .contentType("application/json")
+                .content(webhook))
+        .andExpect(status().isOk());
+    assertEquals(
+        1,
+        db.queryForObject(
+            "select count(*) from expense_transactions where user_id=? and provider_payment",
+            Integer.class,
+            uid));
+    assertEquals(
+        1,
+        db.queryForObject(
+            "select count(*) from event_outbox where user_id=? and event_type='PAYMENT_CAPTURED'",
+            Integer.class,
+            uid));
+    Long tx =
+        db.queryForObject("select transaction_id from checkout_orders where id=?", Long.class, id);
+    mvc.perform(delete("/api/transactions/" + tx).with(user(email)).with(secureCsrf()))
+        .andExpect(status().isConflict());
+    mvc.perform(
+            put("/api/transactions/" + tx)
+                .with(user(email))
+                .with(secureCsrf())
+                .contentType("application/json")
+                .content(payload("10", LocalDateTime.now().minusMinutes(1).toString())))
+        .andExpect(status().isConflict());
+  }
+
+  @Test
+  void razorpayPendingFailedAndMismatchedPaymentsDoNotCreateExpenses() throws Exception {
+    String id = checkout(UUID.randomUUID().toString());
+    var failed = providerPayment(id, "failed");
+    org.mockito.Mockito.when(razorpay.payments(org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(json.createObjectNode().set("items", json.createArrayNode().add(failed)));
+    mvc.perform(post("/api/checkout/orders/" + id + "/sync").with(user(email)).with(secureCsrf()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("FAILED"));
+    var authorized = providerPayment(id, "authorized");
+    org.mockito.Mockito.when(razorpay.payments(org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(json.createObjectNode().set("items", json.createArrayNode().add(authorized)));
+    mvc.perform(post("/api/checkout/orders/" + id + "/sync").with(user(email)).with(secureCsrf()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("AUTHORIZED"));
+    var wrong = (com.fasterxml.jackson.databind.node.ObjectNode) providerPayment(id, "captured");
+    wrong.put("amount", 1);
+    org.mockito.Mockito.when(razorpay.payments(org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(json.createObjectNode().set("items", json.createArrayNode().add(wrong)));
+    mvc.perform(post("/api/checkout/orders/" + id + "/sync").with(user(email)).with(secureCsrf()))
+        .andExpect(status().isConflict());
+    assertEquals(
+        0,
+        db.queryForObject(
+            "select count(*) from expense_transactions where user_id=?", Integer.class, uid));
+  }
+
+  @Test
+  void razorpayOrderOwnershipAndCsrfAreRequired() throws Exception {
+    String id = checkout(UUID.randomUUID().toString());
+    String owner = email;
+    account(); // A separately registered account cannot see or verify the first order.
+    mvc.perform(get("/api/checkout/orders").with(user(email)))
+        .andExpect(status().isOk())
+        .andExpect(content().json("[]"));
+    mvc.perform(post("/api/checkout/orders/" + id + "/sync").with(user(email)).with(secureCsrf()))
+        .andExpect(status().isNotFound());
+    mvc.perform(post("/api/checkout/orders/" + id + "/sync").with(user(owner)))
+        .andExpect(status().isForbidden());
+    mvc.perform(get("/api/checkout/orders")).andExpect(status().isUnauthorized());
+  }
+
   String email;
   Long uid;
   Long category;
@@ -122,8 +276,10 @@ class SpendWiseApplicationTests {
 
   @Test
   void csrfBootstrapIgnoresExpiredAccessCookie() throws Exception {
-    mvc.perform(get("/api/auth/csrf")
-        .cookie(new jakarta.servlet.http.Cookie("spendwise_token", "expired.invalid.token")))
+    mvc.perform(
+            get("/api/auth/csrf")
+                .cookie(
+                    new jakarta.servlet.http.Cookie("spendwise_token", "expired.invalid.token")))
         .andExpect(status().isOk())
         .andExpect(cookie().exists("XSRF-TOKEN"));
   }

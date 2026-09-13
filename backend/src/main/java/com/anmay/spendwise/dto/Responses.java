@@ -29,7 +29,8 @@ public final class Responses {
       String type,
       String notes,
       boolean recurring,
-      boolean walletPayment) {}
+      boolean walletPayment,
+      boolean providerPayment) {}
 
   public record BudgetProgress(
       Long budgetId,

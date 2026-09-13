@@ -54,6 +54,7 @@ public class SecurityConfig {
         .csrf(
             csrf ->
                 csrf.csrfTokenRepository(csrfRepository)
+                    .ignoringRequestMatchers("/api/checkout/webhook")
                     .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
         .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
         .sessionManagement(
@@ -63,6 +64,7 @@ public class SecurityConfig {
                 authorize
                     .requestMatchers(
                         "/api/health",
+                        "/api/checkout/webhook",
                         "/api/auth/csrf",
                         "/api/auth/register",
                         "/api/auth/login",

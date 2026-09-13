@@ -117,9 +117,9 @@ public class TransactionCrudService {
 
   public TransactionView update(Long id, TransactionRequest request) {
     var tx = owned(id);
-    if (tx.isWalletPayment())
+    if (tx.isWalletPayment() || tx.isProviderPayment())
       throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "Wallet payments can only be recategorized");
+          HttpStatus.CONFLICT, "Confirmed payments can only be recategorized");
     tx.revise(
         request.merchant().trim(),
         request.notes(),
@@ -135,8 +135,8 @@ public class TransactionCrudService {
 
   public void delete(Long id) {
     var tx = owned(id);
-    if (tx.isWalletPayment())
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "Wallet payments cannot be deleted");
+    if (tx.isWalletPayment() || tx.isProviderPayment())
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "Confirmed payments cannot be deleted");
     publish("TRANSACTION_DELETED", tx);
     txs.delete(tx);
   }
